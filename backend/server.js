@@ -1,82 +1,76 @@
-const express = require("express");
-const cors = require("cors");
-const mysql = require("mysql2/promise");
+const express = require('express');
+const mysql = require('mysql2');
+const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-
 app.use(cors());
 app.use(express.json());
 
-// Variable global para el pool de conexiones
-let pool;
+const db = mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'secret',
+    database: process.env.DB_NAME || 'innovatech_db',
+    port: 3306
+});
 
-// Función con reintento automático para esperar a la base de datos
-async function initDb() {
-  let connected = false;
-  let attempts = 0;
-  
-  while (!connected && attempts < 10) {
-    try {
-      console.log(`Intentando conectar a MySQL (intento ${attempts + 1})...`);
-      
-      pool = mysql.createPool({
-        host: 'db', // Nombre del servicio en docker-compose
-        user: 'root',
-        password: 'admin123',
-        database: 'innovatech_db',
-        port: 3306,
-        waitForConnections: true,
-        connectionLimit: 10
-      });
-
-      // Prueba rápida para verificar que la BD responde
-      await pool.query("SELECT 1");
-      console.log("¡Conexión exitosa a la base de datos 'innovatech_db'!");
-      connected = true;
-    } catch (err) {
-      attempts++;
-      console.error("Base de datos no disponible, reintentando en 3 segundos...");
-      // Espera 3 segundos antes del siguiente intento
-      await new Promise(resolve => setTimeout(resolve, 3000));
+db.connect((err) => {
+    if (err) {
+        console.error('Error conectando a la base de datos:', err);
+        return;
     }
-  }
-
-  if (!connected) {
-    console.error("No se pudo conectar a la base de datos tras 10 intentos.");
-  }
-}
-
-function handleError(res, error, message = "Error interno del servidor") {
-  console.error(error);
-  res.status(500).json({ message });
-}
-
-// Rutas de API
-app.get("/api/productos", async (req, res) => {
-  if (!pool) return res.status(503).json({ message: "Base de datos no conectada" });
-  try {
-    const [rows] = await pool.query("SELECT id, nombre, descripcion, precio, stock FROM productos ORDER BY id DESC");
-    res.json(rows);
-  } catch (err) {
-    handleError(res, err, "No se pudieron obtener los productos.");
-  }
+    console.log('Conectado exitosamente a la base de datos MySQL');
 });
 
-app.post("/api/productos", async (req, res) => {
-  if (!pool) return res.status(503).json({ message: "Base de datos no conectada" });
-  const { nombre, descripcion, precio, stock } = req.body;
-  try {
-    const [result] = await pool.query(
-      "INSERT INTO productos (nombre, descripcion, precio, stock) VALUES (?, ?, ?, ?)",
-      [nombre, descripcion || null, precio, stock]
-    );
-    res.status(201).json({ id: result.insertId, nombre, descripcion, precio, stock });
-  } catch (err) { handleError(res, err); }
+// 1. Obtener todos los productos
+app.get('/api/productos', (req, res) => {
+    db.query('SELECT * FROM productos', (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
 });
 
-// Iniciar servidor
-app.listen(PORT, async () => {
-  console.log(`Servidor backend escuchando en puerto ${PORT}`);
-  await initDb();
+// 2. Obtener un producto por ID
+app.get('/api/productos/:id', (req, res) => {
+    const { id } = req.params;
+    db.query('SELECT * FROM productos WHERE id = ?', [id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (result.length === 0) return res.status(404).json({ message: 'Producto no encontrado' });
+        res.json(result[0]);
+    });
+});
+
+// 3. Crear nuevo producto (Guarda Nombre, Descripción, Precio y Stock)
+app.post('/api/productos', (req, res) => {
+    const { nombre, descripcion, precio, stock } = req.body;
+    db.query('INSERT INTO productos (nombre, descripcion, precio, stock) VALUES (?, ?, ?, ?)', 
+    [nombre, descripcion, precio, stock], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.status(201).json({ id: result.insertId, nombre, descripcion, precio, stock });
+    });
+});
+
+// 4. Actualizar producto existente
+app.put('/api/productos/:id', (req, res) => {
+    const { id } = req.params;
+    const { nombre, descripcion, precio, stock } = req.body;
+    db.query('UPDATE productos SET nombre = ?, descripcion = ?, precio = ?, stock = ? WHERE id = ?', 
+    [nombre, descripcion, precio, stock, id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Producto actualizado correctamente' });
+    });
+});
+
+// 5. Eliminar un producto
+app.delete('/api/productos/:id', (req, res) => {
+    const { id } = req.params;
+    db.query('DELETE FROM productos WHERE id = ?', [id], (err, result) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Producto eliminado correctamente' });
+    });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+    console.log(`Servidor corriendo en el puerto ${PORT}`);
 });

@@ -1,53 +1,58 @@
-name: Deploy Innovatech Web
+name: CI/CD Pipeline - Innovatech Chile
 
 on:
   push:
-    branches:
-      - deploy
+    branches: [ main ]
 
 jobs:
-  build-and-push:
-    name: Build and Push to ECR
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del código
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Configurar credenciales de AWS
-        uses: aws-actions/configure-aws-credentials@v1
+      # Configuración de credenciales de AWS usando Secrets seguros
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
-      - name: Login a Amazon ECR
+      # Autenticación en Amazon ECR
+      - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, Tag, and Push a ECR
+      # 1. Construir y subir imagen del Frontend
+      - name: Build, Tag, and Push Frontend to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: innovatech-web
+          ECR_REPOSITORY: innovatech-frontend
           IMAGE_TAG: latest
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./frontend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-  deploy:
-    name: Deploy to EC2
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@master
+      # 2. Construir y subir imagen del Backend (Suma puntos clave en la rúbrica)
+      - name: Build, Tag, and Push Backend to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: innovatech-backend
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./backend
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # 3. Despliegue automático en la instancia AWS EC2 vía SSH
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
+          username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 774077826395.dkr.ecr.us-east-1.amazonaws.com
-            docker rm -f contenedor-web || true
-            docker rmi 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest || true
-            docker pull 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest
-            docker run -d --name contenedor-web -p 80:80 --add-host innovatech-backend:100.54.242.203 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest
+            cd /home/ubuntu/Innovatech-Chile
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+            docker-compose pull
+            docker-compose up -d

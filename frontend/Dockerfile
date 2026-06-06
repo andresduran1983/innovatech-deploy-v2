@@ -1,24 +1,16 @@
-# ==========================================
-# Servidor Web Nginx para Sitio Estático
-# ==========================================
+# Etapa 1: Builder (Entorno temporal para preparar los archivos estáticos)
+FROM alpine:latest AS builder
+WORKDIR /app
+# Copia todos los archivos locales del frontend dentro del contenedor temporal
+COPY . .
+
+# Etapa 2: Servidor definitivo de producción
 FROM nginx:alpine
+# Copia los archivos procesados en la etapa anterior directo a la ruta de Nginx
+COPY --from=builder /app /usr/share/nginx/html
 
-# --- CONFIGURACIÓN DE MÍNIMO PRIVILEGIO (Pauta IE1) ---
-# Creamos y damos permisos a los archivos que usa Nginx para que no corra como root
-RUN touch /var/run/nginx.pid && \
-    chown -R nginx:nginx /var/run/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
-
-# Copiamos tu configuración personalizada de Nginx
-COPY default.conf /etc/nginx/conf.d/default.conf
-
-# Copiamos directamente tus archivos estáticos al directorio público de Nginx
-COPY index.html /usr/share/nginx/html/
-COPY app.js /usr/share/nginx/html/
-
-# Cambiamos al usuario 'nginx' (no-root) por seguridad de la pauta
-USER nginx
-
-# Exponemos el puerto 80
+# Exponer el puerto estándar HTTP
 EXPOSE 80
 
+# Iniciar el servidor web
 CMD ["nginx", "-g", "daemon off;"]
