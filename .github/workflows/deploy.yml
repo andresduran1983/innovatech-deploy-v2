@@ -41,13 +41,21 @@ jobs:
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_SESSION_TOKEN
           script: |
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+            export AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 774077826395.dkr.ecr.us-east-1.amazonaws.com
             docker rm -f contenedor-web || true
             docker rmi 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest || true
             docker pull 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest
-            docker run -d --name contenedor-web -p 80:80 --add-host innovatech-backend:100.54.242.203 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest
+            docker run -d --name contenedor-web -p 80:80 --add-host innovatech-backend:172.31.41.116 774077826395.dkr.ecr.us-east-1.amazonaws.com/innovatech-web:latest
